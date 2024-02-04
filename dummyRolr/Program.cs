@@ -72,6 +72,27 @@ builder.Services.AddAuthentication(options =>
 
 	)  ;
 
+builder.Services.AddCors(options =>
+{
+	options.AddDefaultPolicy(builder =>
+	{
+		builder.AllowAnyOrigin()
+			   .AllowAnyHeader()
+			   .AllowAnyMethod();
+	});
+
+	// You can configure named policies for specific use cases
+	// options.AddPolicy("MyPolicy", builder =>
+	// {
+	//     builder.WithOrigins("http://example.com")
+	//            .AllowAnyHeader()
+	//            .AllowAnyMethod();
+	// });
+});
+
+        // Other services...
+    
+
 
 
 var app = builder.Build();
@@ -84,6 +105,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseCors();
 app.UseAuthentication();
 
 app.UseAuthorization();

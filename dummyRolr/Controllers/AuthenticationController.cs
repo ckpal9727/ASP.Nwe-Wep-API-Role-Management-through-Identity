@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
@@ -19,12 +20,14 @@ namespace dummyRolr.Controllers
 		private readonly UserManager<IdentityUser> _userManager;
 		private readonly RoleManager<IdentityRole> _roleManager;
 		private readonly IConfiguration _configuration;
+		private readonly IHttpContextAccessor _httpContextAccessor;
 
-		public AuthenticationController(UserManager<IdentityUser> userManager, RoleManager<IdentityRole> roleManager, IConfiguration configuration)
+		public AuthenticationController(UserManager<IdentityUser> userManager, RoleManager<IdentityRole> roleManager, IConfiguration configuration,IHttpContextAccessor httpContextAccessor)
 		{
 			_userManager = userManager;
 			_roleManager = roleManager;
 			_configuration = configuration;
+			_httpContextAccessor = httpContextAccessor;
 		}
 
 		[HttpPost]
@@ -54,8 +57,21 @@ namespace dummyRolr.Controllers
 					return StatusCode(StatusCodes.Status403Forbidden, new Response { StatusCode = "Error 403", Message = "User already exist" });
 				}
 				//Assign A role
+				var authClaims = new List<Claim>
+				{
+					new Claim(ClaimTypes.Email, registerModel.Email),
+					new Claim(ClaimTypes.Role,role),
+					new Claim(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+				};
+				var jwtToken = GetToken(authClaims);
+
 				await _userManager.AddToRoleAsync(user, role);
-				return StatusCode(StatusCodes.Status201Created, new Response { Message="User created succesfully",StatusCode= "201"});
+				return Ok(new
+				{
+					token = new JwtSecurityTokenHandler().WriteToken(jwtToken),
+					expiration = jwtToken.ValidTo,
+					
+				});
 			}
 			else
 			{
@@ -65,61 +81,53 @@ namespace dummyRolr.Controllers
 		}
 
 		[HttpPost("login")]
-
 		public async Task<IActionResult> Login(LoginModel loginModel)
 		{
-			//check the user
-			var userExist= _userManager.FindByEmailAsync(loginModel.Email);
-			//create claims
-			if (userExist != null  && await _userManager.CheckPasswordAsync(await userExist, loginModel.password))
+			// Check the user
+			var userExist = await _userManager.FindByEmailAsync(loginModel.Email);
+
+			// Create claims
+			if (userExist != null && await _userManager.CheckPasswordAsync(userExist, loginModel.password))
 			{
 				var authClaims = new List<Claim>
 				{
-					new Claim(ClaimTypes.Name,loginModel.Email),
-					new Claim(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti,Guid.NewGuid().ToString()),
+					new Claim(ClaimTypes.Email, loginModel.Email),
+					new Claim(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
 				};
 
-				var userRoles =await _userManager.GetRolesAsync(await userExist);
-			//add role to the claim
-				foreach(var role in userRoles)
+				var userRoles = await _userManager.GetRolesAsync(userExist);
+
+				// Add roles to the claims
+				foreach (var role in userRoles)
 				{
 					authClaims.Add(new Claim(ClaimTypes.Role, role));
 				}
-			//generate the token
+
+				// Generate the token
 				var jwtToken = GetToken(authClaims);
-			//return token
-				return Ok(
-					new 
-					{
-						token = new JwtSecurityTokenHandler().WriteToken(jwtToken),
-						expiration=jwtToken.ValidTo
-					}
-					);
 
+				// Return token
+				return Ok(new
+				{
+					token = new JwtSecurityTokenHandler().WriteToken(jwtToken),
+					expiration = jwtToken.ValidTo,
+					
+				});
 			}
-			return Unauthorized();
-			
+
+			return StatusCode(StatusCodes.Status403Forbidden, new Response { StatusCode = "Error 401", Message = "Invalid email or Password" });
 		}
 
-		[Authorize(Roles ="Admin")]
-		[HttpGet]
-
-		public IEnumerable<string> GetData()
+		private JwtSecurityToken GetToken(List<Claim> authClaims)
 		{
-			return new List<string> { "Ahemd", "sdjflk" };
-
-		}
-
-		private  JwtSecurityToken GetToken(List<Claim> authClaims)
-		{
-			var authSignInKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes( _configuration["JwtSettings:SecretKey"]));
+			var authSignInKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["JwtSettings:SecretKey"]));
 			var token = new JwtSecurityToken(
 				issuer: _configuration["JwtSettings:Issuer"],
 				audience: _configuration["JwtSettings:Audience"],
-				expires:DateTime.Now.AddMinutes(1),
+				expires: DateTime.Now.AddMinutes(1),
 				claims: authClaims,
-				signingCredentials: new SigningCredentials(authSignInKey,SecurityAlgorithms.HmacSha256)
-				);
+				signingCredentials: new SigningCredentials(authSignInKey, SecurityAlgorithms.HmacSha256)
+			);
 			return token;
 		}
 

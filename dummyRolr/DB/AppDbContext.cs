@@ -10,6 +10,11 @@ namespace dummyRolr.DB
 		{
 		}
 
+		public DbSet<Leave> Leaves { get; set; }
+		public DbSet<LeaveType> LeaveTypes { get; set; }
+
+		public DbSet<UserLeaveBalance> userLeaveBalances { get; set; }
+
 		protected override void OnModelCreating(ModelBuilder builder)
 		{
 			base.OnModelCreating(builder);
